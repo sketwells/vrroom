@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+  <head>
+    <title>VOD</title>
+    <style>
+      body {
+        font-size: 24px;
+      }
+      .fg{
+        gap: 10px;
+      }
+      .fb{
+        display: flex; align-items:center; flex-direction: column
+      }
+    </style>
+  </head>
+  <body style="display: flex">
+    
+    <div
+    class="fb fg" 
+    >
+      <h3>Make your own Pizza</h3>
+      <div id="pb" class="fb">Key:<input type="text" id="p" /></div>
+      <div class="fb">Num:<input type="text" id="u" /></div>
+
+      <button onclick="makepizza()" id="btn">Activate</button>
+      <span id="res"></span>
+    </div>
+    <script type="text/javascript" async>
+      const buff_to_base64 = (buff) =>
+        btoa(
+          new Uint8Array(buff).reduce(
+            (data, byte) => data + String.fromCharCode(byte),
+            ""
+          )
+        );
+
+      const base64_to_buf = (b64) =>
+        Uint8Array.from(atob(b64), (c) => c.charCodeAt(null));
+
+      const enc = new TextEncoder();
+      const dec = new TextDecoder();
+
+      const getPasswordKey = (password) =>
+        window.crypto.subtle.importKey(
+          "raw",
+          enc.encode(password),
+          "PBKDF2",
+          false,
+          ["deriveKey"]
+        );
+
+      const deriveKey = (passwordKey, salt, keyUsage) =>
+        window.crypto.subtle.deriveKey(
+          {
+            name: "PBKDF2",
+            salt: salt,
+            iterations: 250000,
+            hash: "SHA-256",
+          },
+          passwordKey,
+          { name: "AES-GCM", length: 256 },
+          false,
+          keyUsage
+        );
+
+      async function decryptData(encryptedData, password) {
+        try {
+          const encryptedDataBuff = base64_to_buf(encryptedData);
+          const salt = encryptedDataBuff.slice(0, 16);
+          const iv = encryptedDataBuff.slice(16, 16 + 12);
+          const data = encryptedDataBuff.slice(16 + 12);
+          const passwordKey = await getPasswordKey(password);
+          const aesKey = await deriveKey(passwordKey, salt, ["decrypt"]);
+          const decryptedContent = await window.crypto.subtle.decrypt(
+            {
+              name: "AES-GCM",
+              iv: iv,
+            },
+            aesKey,
+            data
+          );
+          return dec.decode(decryptedContent);
+        } catch (e) {
+          window.alert("Wrong Key");
+          console.log(`Error - ${e}`);
+          return "";
+        }
+      }
+
+      let encUrl =
+        "bLpolhKMpG6hNBkOlT0uTJXfu8lpKlSGKG/oAs+RnsUePhoXbZ6LMnV/z5kktKzTFixYtRtXo4H8ydoQVqS2bhtZmLpAQX7ac1gX4wc=";
+
+      if (window.localStorage.getItem("key")) {
+        document.getElementById("p").value =  window.localStorage.getItem("key");
+        document.getElementById("pb").style.visibility = "collapse";
+        
+      } else {
+        document.getElementById("pb").style.visibility = "visible";
+      }
+
+      async function makepizza() {
+        console.log("Sending Req");
+        let u = document.getElementById("u").value;
+        let p = document.getElementById("p").value;
+        if (p == "") {
+          window.alert("Missing Key");
+          return;
+        }
+        if (u == "" || u.length != 12) {
+          window.alert("Missing  / Wrong Number");
+          return;
+        }
+        window.localStorage.setItem("key", document.getElementById("p").value);
+        let decUrl = await decryptData(encUrl, p);
+        if (decUrl != "") {
+          document.getElementById("btn").style.visibility = "hidden";
+          try {
+            const response = await fetch(`${decUrl}${u}`)
+              .then((res) => {
+                return res.json();
+              })
+              .then((data) => {
+                let respEl = document.getElementById("res");
+                if (data.error == 0) {
+                  respEl.innerHTML = data.msg;
+                  respEl.style.color = "#61ce81";
+                } else {
+                  document.getElementById("btn").style.visibility = "visible";
+                  respEl.innerHTML = data.msg;
+                  respEl.style.color = "#bf2924";
+                }
+                window.alert(data.msg);
+              });
+          } catch (error) {
+            window.alert("Hmm Smth went wrong");
+            console.log("Hmm smth wrong");
+          }
+        }else{
+          window.localStorage.removeItem("key");
+          document.getElementById("pb").style.visibility = "visible";
+          document.getElementById("p").value= "";
+        }
+      }
+    </script>
+  </body>
+</html>
